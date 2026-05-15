@@ -1,10 +1,10 @@
-# Medical Card Generator
+# AnkiGen
 
-Anki add-on for generating medical flashcards from topics, pasted lecture text, and slide screenshots.
+Medical Card Generator is an Anki add-on for generating medical flashcards from topics, pasted lecture text, and slide screenshots.
 
 ## Repo Scope
 
-This repository should be rooted at the add-on folder itself:
+This repository is rooted at the add-on folder itself:
 
 `addons21/medical_card_generator/`
 
@@ -25,23 +25,13 @@ Do not version the surrounding Anki profile files.
 
 ## Git Workflow
 
-Initialize the repo here:
-
-```bash
-cd medical_card_generator
-git init
-git remote add origin git@github.com:acweingrad/AnkiGen.git
-git add .
-git commit -m "Initial commit"
-git push -u origin main
-```
-
 Typical update flow:
 
 ```bash
 git status
 git add .
 git commit -m "Describe change"
+git pull --rebase origin main
 git push
 ```
 
