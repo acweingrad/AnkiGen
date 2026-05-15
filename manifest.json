@@ -1,0 +1,8 @@
+{
+    "package": "medical_card_generator",
+    "name": "Medical Flashcard Generator (Claude AI)",
+    "mod": 0,
+    "min_point_version": 50,
+    "conflicts": [],
+    "homepage": ""
+}

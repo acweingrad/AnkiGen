@@ -1,0 +1,23 @@
+.DS_Store
+
+# Local Anki/user state
+meta.json
+
+# Python cache and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environment files
+.venv/
+venv/
+.env
+
+# Packaging output
+dist/
+build/
+*.zip
+
+# OS/editor noise
+*.swp
+*.swo
