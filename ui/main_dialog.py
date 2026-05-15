@@ -2,7 +2,7 @@ from aqt import mw
 from aqt.qt import (
     QComboBox, QDialog, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QScrollArea, QSpinBox,
-    QTabWidget, QVBoxLayout, QWidget, Qt,
+    QStackedWidget, QTabWidget, QVBoxLayout, QWidget, Qt,
 )
 from aqt.utils import showInfo, showWarning
 
@@ -22,6 +22,9 @@ except ImportError:
 DOMAINS = ["(any)", "pharmacology", "anatomy", "pathophysiology", "clinical", "microbiology", "biochemistry"]
 CARD_TYPES = ["Mixed", "Basic only", "Cloze only"]
 _CARD_TYPE_VALUES = {"Mixed": "mixed", "Basic only": "basic", "Cloze only": "cloze"}
+CLOZE_MODES = ["Single", "Multi"]
+_CLOZE_MODE_VALUES = {"Single": "single", "Multi": "multi"}
+_STATUS_STYLE = "color: #666666; font-family: SF Mono, Menlo, Monaco, Courier New, monospace;"
 
 
 class MedicalCardDialog(QDialog):
@@ -36,12 +39,20 @@ class MedicalCardDialog(QDialog):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
+        self._screens = QStackedWidget()
+        root.addWidget(self._screens)
 
-        # ── Tab widget ─────────────────────────────────────────────
+        self._build_input_page()
+        self._build_review_page()
+        self._screens.setCurrentWidget(self._input_page)
+
+    def _build_input_page(self):
+        self._input_page = QWidget()
+        root = QVBoxLayout(self._input_page)
+
         self._tabs = QTabWidget()
         root.addWidget(self._tabs)
 
-        # Topic tab
         topic_tab = QWidget()
         topic_layout = QVBoxLayout(topic_tab)
         domain_row = QHBoxLayout()
@@ -59,14 +70,12 @@ class MedicalCardDialog(QDialog):
         topic_layout.addStretch()
         self._tabs.addTab(topic_tab, "Topic")
 
-        # Paste tab
         paste_tab = QWidget()
         paste_layout = QVBoxLayout(paste_tab)
         self._paste_area = PasteArea()
         paste_layout.addWidget(self._paste_area)
         self._tabs.addTab(paste_tab, "Paste Text")
 
-        # ── Controls row ───────────────────────────────────────────
         ctrl_row = QHBoxLayout()
         ctrl_row.addWidget(QLabel("Deck:"))
         self._deck_edit = QLineEdit(self.config.get("default_deck", "Medical::AI Generated"))
@@ -75,7 +84,13 @@ class MedicalCardDialog(QDialog):
         ctrl_row.addWidget(QLabel("Type:"))
         self._card_type_combo = QComboBox()
         self._card_type_combo.addItems(CARD_TYPES)
+        self._card_type_combo.currentTextChanged.connect(self._sync_cloze_mode_enabled)
         ctrl_row.addWidget(self._card_type_combo)
+        ctrl_row.addWidget(QLabel("Cloze:"))
+        self._cloze_mode_combo = QComboBox()
+        self._cloze_mode_combo.addItems(CLOZE_MODES)
+        self._cloze_mode_combo.setCurrentText("Multi")
+        ctrl_row.addWidget(self._cloze_mode_combo)
         ctrl_row.addWidget(QLabel("Cards:"))
         self._n_cards_spin = QSpinBox()
         self._n_cards_spin.setRange(1, 25)
@@ -91,7 +106,36 @@ class MedicalCardDialog(QDialog):
         ctrl_row.addWidget(settings_btn)
         root.addLayout(ctrl_row)
 
-        # ── Card preview area ──────────────────────────────────────
+        self._input_status_label = QLabel("")
+        self._input_status_label.setStyleSheet(_STATUS_STYLE)
+        root.addWidget(self._input_status_label)
+
+        self._sync_cloze_mode_enabled()
+        self._screens.addWidget(self._input_page)
+
+    def _build_review_page(self):
+        self._review_page = QWidget()
+        root = QVBoxLayout(self._review_page)
+
+        top_row = QHBoxLayout()
+        self._edit_inputs_btn = QPushButton("[ Edit Inputs ]")
+        self._edit_inputs_btn.clicked.connect(self._show_input_page)
+        top_row.addWidget(self._edit_inputs_btn)
+
+        self._review_status_label = QLabel("")
+        self._review_status_label.setStyleSheet(_STATUS_STYLE)
+        top_row.addWidget(self._review_status_label, stretch=1)
+
+        reject_all_btn = QPushButton("[ Reject All ]")
+        reject_all_btn.clicked.connect(self._reject_all)
+        top_row.addWidget(reject_all_btn)
+
+        self._add_btn = QPushButton("[ Add All to Anki ]")
+        self._add_btn.setEnabled(False)
+        self._add_btn.clicked.connect(self._add_all_to_anki)
+        top_row.addWidget(self._add_btn)
+        root.addLayout(top_row)
+
         self._scroll_area = QScrollArea()
         self._scroll_area.setWidgetResizable(True)
         self._card_container = QWidget()
@@ -100,21 +144,7 @@ class MedicalCardDialog(QDialog):
         self._scroll_area.setWidget(self._card_container)
         root.addWidget(self._scroll_area, stretch=1)
 
-        self._status_label = QLabel("")
-        self._status_label.setStyleSheet("color: #666666; font-family: SF Mono, Menlo, Monaco, Courier New, monospace;")
-        root.addWidget(self._status_label)
-
-        # ── Bottom buttons ─────────────────────────────────────────
-        bottom_row = QHBoxLayout()
-        reject_all_btn = QPushButton("[ Reject All ]")
-        reject_all_btn.clicked.connect(self._reject_all)
-        bottom_row.addWidget(reject_all_btn)
-        bottom_row.addStretch()
-        self._add_btn = QPushButton("[ Add All to Anki ]")
-        self._add_btn.setEnabled(False)
-        self._add_btn.clicked.connect(self._add_all_to_anki)
-        bottom_row.addWidget(self._add_btn)
-        root.addLayout(bottom_row)
+        self._screens.addWidget(self._review_page)
 
     # ── Generate ───────────────────────────────────────────────────
 
@@ -124,6 +154,7 @@ class MedicalCardDialog(QDialog):
         domain_text = self._domain_combo.currentText()
         domain = None if domain_text == "(any)" else domain_text
         card_type = _CARD_TYPE_VALUES[self._card_type_combo.currentText()]
+        cloze_mode = _CLOZE_MODE_VALUES[self._cloze_mode_combo.currentText()]
         # Pasted lecture/PDF material maps best to AnKing-style cloze notes.
         if mode == "paste" and card_type == "mixed":
             card_type = "cloze"
@@ -133,6 +164,7 @@ class MedicalCardDialog(QDialog):
             "text": self._paste_area.get_text(),
             "images": self._paste_area.get_images() if mode == "paste" else [],
             "card_type": card_type,
+            "cloze_mode": cloze_mode,
             "domain": domain,
             "deck": self._deck_edit.text().strip() or "Medical::AI Generated",
             "n_cards": self._n_cards_spin.value(),
@@ -149,10 +181,12 @@ class MedicalCardDialog(QDialog):
             showWarning("Please paste some text or a screenshot.", parent=self)
             return
 
+        self._show_input_page()
         self._generate_btn.setEnabled(False)
         self._generate_btn.setText("[ Generating… ]")
         self._add_btn.setEnabled(False)
-        self._status_label.setText(f"Generating cards via {self._provider_label()}…")
+        self._input_status_label.setText(f"Generating cards via {self._provider_label()}…")
+        self._review_status_label.setText("")
         self._clear_card_list()
 
         if HAS_QUERY_OP:
@@ -181,14 +215,20 @@ class MedicalCardDialog(QDialog):
         self._generate_btn.setText("[ Generate ]")
         self._populate_card_list(cards)
         if warnings:
-            self._status_label.setText(f"{len(cards)} cards ready. Warnings: {'; '.join(warnings)}")
+            status = f"{len(cards)} cards ready. Warnings: {'; '.join(warnings)}"
         else:
-            self._status_label.setText(f"{len(cards)} cards ready for review.")
+            status = f"{len(cards)} cards ready for review."
+        self._input_status_label.setText(status)
+        self._review_status_label.setText(status)
+        if cards:
+            self._show_review_page()
 
     def _on_api_error(self, exc: Exception):
         self._generate_btn.setEnabled(True)
         self._generate_btn.setText("[ Generate ]")
-        self._status_label.setText("")
+        self._show_input_page()
+        self._input_status_label.setText("")
+        self._review_status_label.setText("")
         showWarning(f"Error generating cards:\n\n{exc}", parent=self)
 
     # ── Card list ──────────────────────────────────────────────────
@@ -197,6 +237,7 @@ class MedicalCardDialog(QDialog):
         for w in self._card_widgets:
             w.setParent(None)
         self._card_widgets.clear()
+        self._add_btn.setEnabled(False)
 
     def _populate_card_list(self, cards: list):
         self._clear_card_list()
@@ -227,8 +268,9 @@ class MedicalCardDialog(QDialog):
         if n_added > 0:
             self._clear_card_list()
             self._paste_area.clear_all()
-            self._add_btn.setEnabled(False)
-            self._status_label.setText(f"{n_added} card(s) added.")
+            self._review_status_label.setText("")
+            self._show_input_page()
+            self._input_status_label.setText(f"{n_added} card(s) added.")
 
     # ── Settings ───────────────────────────────────────────────────
 
@@ -239,3 +281,13 @@ class MedicalCardDialog(QDialog):
 
     def _provider_label(self) -> str:
         return get_provider_label(self.config.get("provider", "anthropic"))
+
+    def _sync_cloze_mode_enabled(self):
+        is_basic_only = self._card_type_combo.currentText() == "Basic only"
+        self._cloze_mode_combo.setEnabled(not is_basic_only)
+
+    def _show_input_page(self):
+        self._screens.setCurrentWidget(self._input_page)
+
+    def _show_review_page(self):
+        self._screens.setCurrentWidget(self._review_page)

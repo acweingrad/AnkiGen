@@ -11,6 +11,7 @@ def _topic_data(**kwargs):
         "topic": "beta blockers",
         "text": "",
         "card_type": "mixed",
+        "cloze_mode": "multi",
         "domain": None,
         "deck": "Medical::AI Generated",
         "n_cards": 10,
@@ -26,6 +27,7 @@ def _paste_data(**kwargs):
         "topic": "",
         "text": "Beta blockers block beta-1 adrenergic receptors.",
         "card_type": "mixed",
+        "cloze_mode": "multi",
         "domain": None,
         "deck": "Medical::AI Generated",
         "n_cards": 10,
@@ -162,6 +164,20 @@ def test_paste_mode_mentions_anking_style():
     content = messages[0]["content"]
     assert "AnKingOverhaul" in content
     assert "back_extra only for a short pearl or image cue" in content
+
+
+def test_topic_mode_single_cloze_instruction_present():
+    messages = build_messages(_topic_data(card_type="cloze", cloze_mode="single"))
+    content = messages[0]["content"]
+    assert "SINGLE only" in content
+    assert "exactly one distinct cloze number" in content
+
+
+def test_paste_mode_multi_cloze_instruction_present():
+    messages = build_messages(_paste_data(card_type="cloze", cloze_mode="multi"))
+    content = messages[0]["content"]
+    assert "MULTI allowed" in content
+    assert "use multiple when the blanks are inseparable" in content
 
 
 def test_system_prompt_contains_cloze_rules():

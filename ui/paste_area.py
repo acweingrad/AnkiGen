@@ -13,7 +13,6 @@ except ImportError:
 
 MAX_LONG_EDGE = 1568
 PDF_RENDER_LONG_EDGE = 1024
-PDF_PAGE_LIMIT = 20
 
 
 def _pdf_no_error_value():
@@ -123,7 +122,7 @@ class PasteArea(QWidget):
             return
 
         total = doc.pageCount()
-        to_render = min(total, PDF_PAGE_LIMIT)
+        to_render = total
 
         for i in range(to_render):
             page_size: QSizeF = doc.pagePointSize(i)
@@ -146,12 +145,7 @@ class PasteArea(QWidget):
         doc.close()
         self._thumb_scroll.setVisible(True)
 
-        if total > PDF_PAGE_LIMIT:
-            self._pdf_status.setText(
-                f"PDF loaded: first {PDF_PAGE_LIMIT} of {total} pages used."
-            )
-        else:
-            self._pdf_status.setText(f"PDF loaded: {total} page(s).")
+        self._pdf_status.setText(f"PDF loaded: {total} page(s).")
         self._pdf_status.setVisible(True)
 
     # ── Screenshot paste ───────────────────────────────────────────

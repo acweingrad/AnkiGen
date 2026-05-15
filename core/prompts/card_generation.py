@@ -65,7 +65,7 @@ CARD STRUCTURE RULES — CLOZE (card_type = "cloze"):
 - The sentence must be a complete, self-sufficient fact with the blank removed — the reader must know exactly what kind of answer to supply. Bad: "The drug is {{c1::metoprolol}}." Good: "The first-line beta-1 selective blocker for HFrEF is {{c1::metoprolol}}."
 - Cloze answers should usually be short noun phrases or short descriptors, not long clauses.
 - Use {{c1::answer::hint}} when a short hint reduces ambiguity without giving away the answer.
-- One cloze deletion per testable fact. Use multiple cN numbers in one sentence only when the facts are inseparable, and never use more than 2 distinct cloze numbers in one note.
+- One cloze deletion per testable fact. If the request allows multi-cloze notes, use multiple cN numbers in one sentence only when the facts are inseparable. Otherwise keep each note to one distinct cloze number.
 - Do not nest cloze deletions.
 - If the fact depends on an image, make the stem say so explicitly and set source_image_index to the matching image.
 - Use back_extra (optional) for supplementary detail after the answer: mechanism, [Mnemonic], clinical correlate, or a short image label/source cue.
@@ -157,6 +157,26 @@ def _card_type_instruction(card_type: str) -> str:
     )
 
 
+def _cloze_mode_instruction(card_type: str, cloze_mode: str) -> str:
+    if card_type == "basic":
+        return ""
+    if cloze_mode == "single":
+        return (
+            "Cloze mode: SINGLE only. Every cloze note must use exactly one distinct cloze number. "
+            "Do not combine multiple cN deletions in the same note."
+        )
+    return (
+        "Cloze mode: MULTI allowed. Prefer a single cloze note when it keeps the fact atomic, "
+        "but use multiple distinct cN deletions in one note when the blanks are tightly linked."
+    )
+
+
+def _anking_cloze_guidance(cloze_mode: str) -> str:
+    if cloze_mode == "single":
+        return "- Use exactly one cloze number per note.\n"
+    return "- Prefer a single cloze number, but use multiple when the blanks are inseparable.\n"
+
+
 def build_messages(prompt_data: dict) -> list:
     if prompt_data["mode"] == "topic":
         user_content = _build_topic_message(prompt_data)
@@ -199,11 +219,16 @@ def _build_topic_message(data: dict) -> str:
     if data.get("domain_hints") and data.get("domain") and data["domain"] in DOMAIN_HINTS:
         hint = f"\n\nDomain guidance: {DOMAIN_HINTS[data['domain']]}"
     type_instruction = _card_type_instruction(data.get("card_type", "mixed"))
+    cloze_instruction = _cloze_mode_instruction(
+        data.get("card_type", "mixed"),
+        data.get("cloze_mode", "multi"),
+    )
     return (
         f"{type_instruction}\n\n"
-        f"Generate {data['n_cards']} high-quality Anki flashcards on the medical topic: "
-        f'"{data["topic"]}".{hint}\n\n'
-        f"Target deck: {data['deck']}"
+        + (f"{cloze_instruction}\n\n" if cloze_instruction else "")
+        + f"Generate {data['n_cards']} high-quality Anki flashcards on the medical topic: "
+        + f'"{data["topic"]}".{hint}\n\n'
+        + f"Target deck: {data['deck']}"
     )
 
 
@@ -217,18 +242,24 @@ def _build_paste_message(data: dict):
         truncated = "\n\n[Note: Input was truncated to 12,000 characters.]"
 
     type_instruction = _card_type_instruction(data.get("card_type", "mixed"))
+    cloze_instruction = _cloze_mode_instruction(
+        data.get("card_type", "mixed"),
+        data.get("cloze_mode", "multi"),
+    )
+    cloze_guidance = _anking_cloze_guidance(data.get("cloze_mode", "multi"))
     images = data.get("images", [])
     if not images:
         return (
             f"{type_instruction}\n\n"
-            f"Generate up to {data['n_cards']} Anki flashcards from the following medical text. "
+            + (f"{cloze_instruction}\n\n" if cloze_instruction else "")
+            + f"Generate up to {data['n_cards']} Anki flashcards from the following medical text. "
             "Extract only the necessary high-yield facts. It is correct to return fewer cards if the source "
             "does not support more strong cards. Ignore admin/citation/PDF extraction noise and do not invent "
             "facts not present in the text.\n\n"
             "Target the AnKingOverhaul cloze style:\n"
             "- Put one concise cloze fact in the main text.\n"
             "- Use back_extra only for a short pearl or image cue.\n"
-            "- Prefer a single cloze number; use a second only when inseparable.\n"
+            f"{cloze_guidance}"
             "- Do not create basic cards for this pasted material unless cloze is clearly impossible.\n\n"
             f"Target deck: {data['deck']}\n\n"
             f"--- BEGIN TEXT ---\n{text}\n--- END TEXT ---{truncated}"
@@ -236,7 +267,8 @@ def _build_paste_message(data: dict):
 
     text_block = (
         f"{type_instruction}\n\n"
-        f"Generate up to {data['n_cards']} Anki flashcards from the following medical slide image(s)"
+        + (f"{cloze_instruction}\n\n" if cloze_instruction else "")
+        + f"Generate up to {data['n_cards']} Anki flashcards from the following medical slide image(s)"
         + (" and text" if text.strip() else "")
         + ". Extract only the necessary high-yield facts. It is correct to return fewer cards if the source "
           "does not support more strong cards. Ignore admin/citation/PDF extraction noise and do not invent "
@@ -244,7 +276,7 @@ def _build_paste_message(data: dict):
         "Target the AnKingOverhaul cloze style:\n"
         "- Put one concise cloze fact in the main text.\n"
         "- Use back_extra only for a short pearl or image cue.\n"
-        "- Prefer a single cloze number; use a second only when inseparable.\n"
+        f"{cloze_guidance}"
         "- Do not create basic cards for this pasted material unless cloze is clearly impossible.\n\n"
         f"There are {len(images)} image(s) provided (index 0 through {len(images) - 1}). "
         "For each card, set source_image_index to the 0-based index of the image the card's content "

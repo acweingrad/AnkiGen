@@ -1,4 +1,5 @@
 import re
+from typing import Optional
 
 from ..config import DEFAULT_DECK
 from .base import CardTypeHandler, CardTypeValidationError
@@ -29,7 +30,7 @@ class BasicCardType(CardTypeHandler):
     key = "basic"
     anki_notetype_name = "Basic"
 
-    def normalize(self, card: dict, default_deck: str = DEFAULT_DECK) -> dict:
+    def normalize(self, card: dict, default_deck: str = DEFAULT_DECK, **_kwargs) -> dict:
         front = card.get("front", "")
         if not isinstance(front, str) or not front.strip():
             raise CardTypeValidationError("missing or empty front")
@@ -56,8 +57,8 @@ class BasicReversedCardType(BasicCardType):
     key = "basic_reversed"
     anki_notetype_name = "Basic (and reversed card)"
 
-    def normalize(self, card: dict, default_deck: str = DEFAULT_DECK) -> dict:
-        entry = super().normalize(card, default_deck)
+    def normalize(self, card: dict, default_deck: str = DEFAULT_DECK, **kwargs) -> dict:
+        entry = super().normalize(card, default_deck, **kwargs)
         entry["card_type"] = self.key
         return entry
 
@@ -65,7 +66,7 @@ class BasicReversedCardType(BasicCardType):
 class ClozeCardType(CardTypeHandler):
     key = "cloze"
     anki_notetype_name = "Cloze"
-    _MAX_UNIQUE_CLOZES = 2
+    _DEFAULT_MAX_UNIQUE_CLOZES = 2
 
     @property
     def notetype_candidates(self) -> tuple[str, ...]:
@@ -74,16 +75,26 @@ class ClozeCardType(CardTypeHandler):
             self.anki_notetype_name,
         )
 
-    def normalize(self, card: dict, default_deck: str = DEFAULT_DECK) -> dict:
+    def normalize(
+        self,
+        card: dict,
+        default_deck: str = DEFAULT_DECK,
+        max_unique_clozes: Optional[int] = _DEFAULT_MAX_UNIQUE_CLOZES,
+        **_kwargs,
+    ) -> dict:
         text = card.get("text", "")
         if not isinstance(text, str) or not text.strip():
             raise CardTypeValidationError("cloze card missing text")
         if not _CLOZE_RE.search(text):
             raise CardTypeValidationError("cloze card has no {{c1::...}} deletions")
         unique_cloze_numbers = set(re.findall(r"\{\{c(\d+)::", text))
-        if len(unique_cloze_numbers) > self._MAX_UNIQUE_CLOZES:
+        if (
+            isinstance(max_unique_clozes, int)
+            and max_unique_clozes > 0
+            and len(unique_cloze_numbers) > max_unique_clozes
+        ):
             raise CardTypeValidationError(
-                f"cloze card has too many distinct deletions ({len(unique_cloze_numbers)} > {self._MAX_UNIQUE_CLOZES})"
+                f"cloze card has too many distinct deletions ({len(unique_cloze_numbers)} > {max_unique_clozes})"
             )
 
         back_extra = card.get("back_extra", "")

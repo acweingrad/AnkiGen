@@ -88,3 +88,43 @@ def test_service_caps_generated_cards_to_requested_count(monkeypatch):
 
     assert [card["front"] for card in cards] == ["Q1", "Q2"]
     assert warnings == ["Returned 3 cards; capped at requested 2"]
+
+
+def test_service_enforces_single_cloze_mode(monkeypatch):
+    service = CardGenerationService(
+        {
+            "provider": "stub",
+            "provider_api_keys": {},
+            "auto_add_disclaimer_card": False,
+        }
+    )
+    stub_provider = _StubProvider(
+        [
+            {
+                "card_type": "cloze",
+                "text": "{{c1::Metoprolol}} is a {{c2::beta-1}} blocker.",
+                "back_extra": "",
+                "tags": [],
+                "deck": "Medical::AI Generated",
+            }
+        ]
+    )
+    monkeypatch.setattr("core.services.card_generation.require_provider", lambda _name: stub_provider)
+
+    cards, warnings = service.generate_cards(
+        {
+            "mode": "paste",
+            "text": "source",
+            "images": [],
+            "card_type": "cloze",
+            "cloze_mode": "single",
+            "domain": None,
+            "deck": "Custom::Deck",
+            "n_cards": 1,
+            "domain_hints": True,
+        }
+    )
+
+    assert cards == []
+    assert len(warnings) == 1
+    assert "too many distinct deletions" in warnings[0]

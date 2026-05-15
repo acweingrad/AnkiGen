@@ -132,6 +132,24 @@ def test_cloze_more_than_two_distinct_deletions_skipped():
     assert any("too many distinct deletions" in w for w in warnings)
 
 
+def test_single_cloze_mode_rejects_multiple_distinct_deletions():
+    cards, warnings = validate_and_clean_cards(
+        [_cloze(text="{{c1::Metoprolol}} is a {{c2::beta-1}} blocker.")],
+        max_unique_clozes=1,
+    )
+    assert len(cards) == 0
+    assert any("too many distinct deletions" in w for w in warnings)
+
+
+def test_multi_cloze_mode_allows_more_than_two_distinct_deletions():
+    cards, warnings = validate_and_clean_cards(
+        [_cloze(text="{{c1::A}} causes {{c2::B}} which leads to {{c3::C}}.")],
+        max_unique_clozes=None,
+    )
+    assert len(cards) == 1
+    assert warnings == []
+
+
 # ── Shared field tests ────────────────────────────────────────────────────────
 
 def test_tags_coerced_from_string_to_list():

@@ -1,9 +1,11 @@
+from typing import Optional
+
 from .card_types.base import CardTypeValidationError
 from .card_types.registry import get_card_type_handler, get_default_card_type_handler
 from .config import DEFAULT_DECK
 
 
-def validate_and_clean_cards(raw_cards: list) -> tuple:
+def validate_and_clean_cards(raw_cards: list, *, max_unique_clozes: Optional[int] = 2) -> tuple:
     valid = []
     warnings = []
 
@@ -27,7 +29,13 @@ def validate_and_clean_cards(raw_cards: list) -> tuple:
         working_card["card_type"] = handler.key
 
         try:
-            valid.append(handler.normalize(working_card, default_deck=DEFAULT_DECK))
+            valid.append(
+                handler.normalize(
+                    working_card,
+                    default_deck=DEFAULT_DECK,
+                    max_unique_clozes=max_unique_clozes,
+                )
+            )
         except CardTypeValidationError as exc:
             warnings.append(f"{label}: {exc} — skipped")
 

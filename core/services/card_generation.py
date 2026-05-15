@@ -1,3 +1,5 @@
+from typing import Optional
+
 from ..card_parser import validate_and_clean_cards
 from ..config import DEFAULT_DECK, normalize_config
 from ..prompts.card_generation import build_disclaimer_card
@@ -11,7 +13,10 @@ class CardGenerationService:
     def generate_cards(self, prompt_data: dict) -> tuple[list, list]:
         provider = require_provider(self.config["provider"])
         raw_cards = provider.generate_cards(prompt_data, self.config)
-        valid_cards, warnings = validate_and_clean_cards(raw_cards)
+        valid_cards, warnings = validate_and_clean_cards(
+            raw_cards,
+            max_unique_clozes=self._max_unique_clozes(prompt_data.get("cloze_mode")),
+        )
         valid_cards, limit_warnings = self._limit_cards(valid_cards, prompt_data.get("n_cards"))
         warnings.extend(limit_warnings)
         self._attach_source_images(valid_cards, prompt_data.get("images", []))
@@ -21,6 +26,14 @@ class CardGenerationService:
             valid_cards.append(build_disclaimer_card(disclaimer_deck))
 
         return valid_cards, warnings
+
+    @staticmethod
+    def _max_unique_clozes(cloze_mode) -> Optional[int]:
+        if cloze_mode == "single":
+            return 1
+        if cloze_mode == "multi":
+            return None
+        return 2
 
     @staticmethod
     def _attach_source_images(cards: list, images: list[bytes]) -> None:
