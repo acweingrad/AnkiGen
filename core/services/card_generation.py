@@ -13,10 +13,20 @@ class CardGenerationService:
     def generate_cards(self, prompt_data: dict) -> tuple[list, list]:
         provider = require_provider(self.config["provider"])
         raw_cards = provider.generate_cards(prompt_data, self.config)
+        if not raw_cards:
+            raise RuntimeError(
+                "The model returned 0 cards. Try a more specific topic or paste text with "
+                "clear testable medical facts."
+            )
+
         valid_cards, warnings = validate_and_clean_cards(
             raw_cards,
             max_unique_clozes=self._max_unique_clozes(prompt_data.get("cloze_mode")),
         )
+        if not valid_cards:
+            reason = "; ".join(warnings) if warnings else "No cards passed validation."
+            raise RuntimeError(f"The model returned cards, but none were usable: {reason}")
+
         valid_cards, limit_warnings = self._limit_cards(valid_cards, prompt_data.get("n_cards"))
         warnings.extend(limit_warnings)
         self._attach_source_images(valid_cards, prompt_data.get("images", []))

@@ -1,5 +1,6 @@
 import os
 import sys
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -111,20 +112,49 @@ def test_service_enforces_single_cloze_mode(monkeypatch):
     )
     monkeypatch.setattr("core.services.card_generation.require_provider", lambda _name: stub_provider)
 
-    cards, warnings = service.generate_cards(
+    with pytest.raises(RuntimeError) as exc:
+        service.generate_cards(
+            {
+                "mode": "paste",
+                "text": "source",
+                "images": [],
+                "card_type": "cloze",
+                "cloze_mode": "single",
+                "domain": None,
+                "deck": "Custom::Deck",
+                "n_cards": 1,
+                "domain_hints": True,
+            }
+        )
+
+    assert "none were usable" in str(exc.value)
+    assert "too many distinct deletions" in str(exc.value)
+
+
+def test_service_raises_when_provider_returns_no_cards(monkeypatch):
+    service = CardGenerationService(
         {
-            "mode": "paste",
-            "text": "source",
-            "images": [],
-            "card_type": "cloze",
-            "cloze_mode": "single",
-            "domain": None,
-            "deck": "Custom::Deck",
-            "n_cards": 1,
-            "domain_hints": True,
+            "provider": "stub",
+            "provider_api_keys": {},
+            "auto_add_disclaimer_card": False,
         }
     )
+    stub_provider = _StubProvider([])
+    monkeypatch.setattr("core.services.card_generation.require_provider", lambda _name: stub_provider)
 
-    assert cards == []
-    assert len(warnings) == 1
-    assert "too many distinct deletions" in warnings[0]
+    with pytest.raises(RuntimeError) as exc:
+        service.generate_cards(
+            {
+                "mode": "topic",
+                "topic": "beta blockers",
+                "images": [],
+                "card_type": "mixed",
+                "cloze_mode": "multi",
+                "domain": None,
+                "deck": "Custom::Deck",
+                "n_cards": 10,
+                "domain_hints": True,
+            }
+        )
+
+    assert "returned 0 cards" in str(exc.value)
