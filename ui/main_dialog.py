@@ -93,7 +93,7 @@ class MedicalCardDialog(QDialog):
         ctrl_row.addWidget(self._cloze_mode_combo)
         ctrl_row.addWidget(QLabel("Cards:"))
         self._n_cards_spin = QSpinBox()
-        self._n_cards_spin.setRange(1, 25)
+        self._n_cards_spin.setRange(1, 100)
         self._n_cards_spin.setValue(self.config.get("cards_per_topic", 10))
         ctrl_row.addWidget(self._n_cards_spin)
         ctrl_row.addStretch()

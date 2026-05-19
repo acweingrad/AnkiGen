@@ -62,7 +62,7 @@ class ConfigDialog(QDialog):
         form.addRow("Default Deck:", self.deck_field)
 
         self.cards_spinner = QSpinBox()
-        self.cards_spinner.setRange(1, 25)
+        self.cards_spinner.setRange(1, 100)
         self.cards_spinner.setValue(self.config.get("cards_per_topic", 10))
         form.addRow("Cards per Topic (default):", self.cards_spinner)
 
