@@ -270,6 +270,47 @@ def test_service_batches_large_requested_count(monkeypatch):
     assert "requested 70 total cards" in provider.calls[1]["retry_instructions"]
 
 
+def test_service_does_not_rebatch_pasted_source(monkeypatch):
+    service = CardGenerationService(
+        {
+            "provider": "sequence",
+            "provider_api_keys": {},
+            "auto_add_disclaimer_card": False,
+        }
+    )
+    provider = _SequenceProvider(
+        [
+            [
+                {"card_type": "basic", "front": "Q1", "back": "A1", "tags": [], "deck": "Medical::AI Generated"},
+            ],
+            [
+                {"card_type": "basic", "front": "Q2", "back": "A2", "tags": [], "deck": "Medical::AI Generated"},
+            ],
+        ]
+    )
+    monkeypatch.setattr("core.services.card_generation.require_provider", lambda _name: provider)
+
+    cards, warnings = service.generate_cards(
+        {
+            "mode": "paste",
+            "topic": "",
+            "text": "long pasted lecture source",
+            "images": [],
+            "card_type": "cloze",
+            "cloze_mode": "multi",
+            "domain": None,
+            "deck": "Custom::Deck",
+            "n_cards": 20,
+            "domain_hints": True,
+        }
+    )
+
+    assert [card["front"] for card in cards] == ["Q1"]
+    assert len(provider.calls) == 1
+    assert provider.calls[0]["n_cards"] == 10
+    assert "Generated 1 usable cards out of requested 20 after 1 API calls" in warnings
+
+
 def test_service_does_not_count_duplicate_retry_cards(monkeypatch):
     service = CardGenerationService(
         {

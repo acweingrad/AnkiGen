@@ -22,8 +22,16 @@ class CardGenerationService:
         provider_calls = 0
         empty_attempts = 0
         no_progress_attempts = 0
+        max_provider_calls = self._max_provider_calls_for_prompt(prompt_data, requested_count)
 
-        while self._should_request_more(provider_calls, empty_attempts, no_progress_attempts, valid_cards, requested_count):
+        while self._should_request_more(
+            provider_calls,
+            empty_attempts,
+            no_progress_attempts,
+            valid_cards,
+            requested_count,
+            max_provider_calls,
+        ):
             attempt_prompt_data = self._build_attempt_prompt_data(
                 prompt_data,
                 requested_count,
@@ -125,6 +133,7 @@ class CardGenerationService:
         no_progress_attempts: int,
         valid_cards: list,
         requested_count,
+        max_provider_calls: int,
     ) -> bool:
         if empty_attempts >= cls._MAX_EMPTY_PROVIDER_ATTEMPTS:
             return False
@@ -134,7 +143,7 @@ class CardGenerationService:
             return provider_calls == 0
         if cls._has_requested_count(valid_cards, requested_count):
             return False
-        return provider_calls < cls._max_provider_calls(requested_count)
+        return provider_calls < max_provider_calls
 
     @classmethod
     def _max_provider_calls(cls, requested_count) -> int:
@@ -142,6 +151,12 @@ class CardGenerationService:
             return 1
         full_batches = (requested_count + cls._MAX_CARDS_PER_PROVIDER_CALL - 1) // cls._MAX_CARDS_PER_PROVIDER_CALL
         return full_batches + cls._MAX_EMPTY_PROVIDER_ATTEMPTS - 1
+
+    @classmethod
+    def _max_provider_calls_for_prompt(cls, prompt_data: dict, requested_count) -> int:
+        if prompt_data.get("mode") == "paste":
+            return 1
+        return cls._max_provider_calls(requested_count)
 
     @staticmethod
     def _max_unique_clozes(cloze_mode) -> Optional[int]:

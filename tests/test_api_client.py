@@ -53,6 +53,17 @@ def _make_http_error(code: int, message: str):
     return err
 
 
+def _make_anthropic_http_error(code: int, message: str, headers=None):
+    err = urllib.error.HTTPError(
+        url="https://api.anthropic.com/v1/messages",
+        code=code,
+        msg=message,
+        hdrs=headers or {},
+        fp=io.BytesIO(json.dumps({"error": {"message": message}}).encode()),
+    )
+    return err
+
+
 class TestClaudeClient(unittest.TestCase):
     def setUp(self):
         self.client = ClaudeClient("test-key")
@@ -77,6 +88,22 @@ class TestClaudeClient(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             self.client.generate_cards(MESSAGES, CONFIG)
         self.assertIn("429", str(ctx.exception))
+
+    @patch("urllib.request.urlopen")
+    def test_http_429_uses_readable_rate_limit_message(self, mock_urlopen):
+        mock_urlopen.side_effect = _make_anthropic_http_error(
+            429,
+            "This request would exceed your organization's rate limit.",
+            {"retry-after": "12"},
+        )
+
+        with self.assertRaises(RuntimeError) as ctx:
+            self.client.generate_cards(MESSAGES, CONFIG)
+
+        message = str(ctx.exception)
+        self.assertIn("Anthropic rate limit hit (429)", message)
+        self.assertIn("Wait 12 seconds", message)
+        self.assertIn("shorten pasted text", message)
 
     @patch("urllib.request.urlopen")
     def test_network_error_raises_runtime_error(self, mock_urlopen):

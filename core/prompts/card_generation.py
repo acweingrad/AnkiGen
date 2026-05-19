@@ -2,6 +2,8 @@ import re
 
 from ..config import DEFAULT_DECK
 
+PASTE_TEXT_CHAR_LIMIT = 8000
+
 SYSTEM_PROMPT = """You are a medical education specialist creating Anki flashcards for medical students. Follow every rule below exactly.
 
 ACCURACY REQUIREMENTS:
@@ -239,9 +241,9 @@ def _build_paste_message(data: dict):
 
     text = _prepare_pasted_text(data.get("text", ""))
     truncated = ""
-    if len(text) > 12000:
-        text = text[:12000]
-        truncated = "\n\n[Note: Input was truncated to 12,000 characters.]"
+    if len(text) > PASTE_TEXT_CHAR_LIMIT:
+        text = text[:PASTE_TEXT_CHAR_LIMIT]
+        truncated = f"\n\n[Note: Input was truncated to {PASTE_TEXT_CHAR_LIMIT:,} characters.]"
 
     retry_instructions = _retry_instructions(data)
     type_instruction = _card_type_instruction(data.get("card_type", "mixed"))

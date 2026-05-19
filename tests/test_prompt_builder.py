@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from core.prompt_builder import build_messages, SYSTEM_PROMPT
+from core.prompt_builder import PASTE_TEXT_CHAR_LIMIT, build_messages, SYSTEM_PROMPT
 
 
 def _topic_data(**kwargs):
@@ -106,17 +106,16 @@ def test_paste_mode_filters_common_pdf_noise_but_keeps_scope_signals():
     assert "You are not responsible" in content
 
 
-def test_paste_mode_truncates_at_12000_chars():
-    long_text = "A" * 15000
+def test_paste_mode_truncates_at_paste_text_char_limit():
+    long_text = "A" * (PASTE_TEXT_CHAR_LIMIT + 3000)
     messages = build_messages(_paste_data(text=long_text))
     content = messages[0]["content"]
-    # The text in the message should not contain 15000 A's
-    assert "A" * 12001 not in content
+    assert "A" * (PASTE_TEXT_CHAR_LIMIT + 1) not in content
     assert "truncated" in content
 
 
 def test_paste_mode_no_truncation_under_limit():
-    text = "A" * 11999
+    text = "A" * (PASTE_TEXT_CHAR_LIMIT - 1)
     messages = build_messages(_paste_data(text=text))
     assert "truncated" not in messages[0]["content"]
 

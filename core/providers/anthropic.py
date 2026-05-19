@@ -120,7 +120,7 @@ class AnthropicProvider(ModelProvider):
                 data = json.loads(response.read())
         except urllib.error.HTTPError as exc:
             error_body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"API error {exc.code}: {error_body}") from exc
+            raise RuntimeError(_format_http_error(exc, error_body)) from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(f"Network error: {exc.reason}") from exc
 
@@ -168,3 +168,30 @@ def _build_empty_retry_messages(messages: list) -> list:
 
     retry_messages[-1] = last_message
     return retry_messages
+
+
+def _format_http_error(exc: urllib.error.HTTPError, error_body: str) -> str:
+    if exc.code != 429:
+        return f"API error {exc.code}: {error_body}"
+
+    message = _extract_error_message(error_body) or "Anthropic rate limit exceeded."
+    retry_after = exc.headers.get("retry-after") if exc.headers else None
+    retry_text = f" Wait {retry_after} seconds and try again." if retry_after else " Try again later."
+    return (
+        f"Anthropic rate limit hit (429): {message}"
+        f"{retry_text} Reduce the number of requested cards, shorten pasted text, or use fewer screenshots."
+    )
+
+
+def _extract_error_message(error_body: str) -> str:
+    try:
+        data = json.loads(error_body)
+    except json.JSONDecodeError:
+        return error_body.strip()
+
+    error = data.get("error")
+    if isinstance(error, dict):
+        return str(error.get("message") or "").strip()
+    if isinstance(error, str):
+        return error.strip()
+    return ""
