@@ -312,6 +312,64 @@ def test_service_rebatches_pasted_source_until_requested_count(monkeypatch):
     assert "Generated 2 usable cards out of requested 20 after 5 API calls" in warnings
 
 
+def test_service_continues_pasted_source_after_full_default_batch(monkeypatch):
+    service = CardGenerationService(
+        {
+            "provider": "sequence",
+            "provider_api_keys": {},
+            "auto_add_disclaimer_card": False,
+        }
+    )
+    provider = _SequenceProvider(
+        [
+            [
+                {
+                    "card_type": "basic",
+                    "front": f"Q1_{i}",
+                    "back": "A",
+                    "tags": [],
+                    "deck": "Medical::AI Generated",
+                }
+                for i in range(10)
+            ],
+            [
+                {
+                    "card_type": "basic",
+                    "front": "Q2",
+                    "back": "A",
+                    "tags": [],
+                    "deck": "Medical::AI Generated",
+                },
+            ],
+            [],
+            [],
+            [],
+        ]
+    )
+    monkeypatch.setattr("core.services.card_generation.require_provider", lambda _name: provider)
+
+    cards, warnings = service.generate_cards(
+        {
+            "mode": "paste",
+            "topic": "",
+            "text": "long pasted lecture source",
+            "images": [],
+            "card_type": "basic",
+            "cloze_mode": "multi",
+            "domain": None,
+            "deck": "Custom::Deck",
+            "n_cards": 10,
+            "domain_hints": True,
+        }
+    )
+
+    assert len(cards) == 11
+    assert len(provider.calls) == 5
+    assert [call["n_cards"] for call in provider.calls] == [10, 10, 10, 10, 10]
+    assert "keep going" in provider.calls[1]["retry_instructions"]
+    assert "Attempt 5: provider returned 0 cards" in warnings
+
+
 def test_service_does_not_count_duplicate_retry_cards(monkeypatch):
     service = CardGenerationService(
         {

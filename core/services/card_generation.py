@@ -10,6 +10,7 @@ from ..providers.registry import require_provider
 
 class CardGenerationService:
     _MAX_CARDS_PER_PROVIDER_CALL = 10
+    _MAX_CARDS_PER_SOURCE_GENERATION = 100
     _MAX_EMPTY_PROVIDER_ATTEMPTS = 3
 
     def __init__(self, config: dict):
@@ -18,25 +19,27 @@ class CardGenerationService:
     def generate_cards(self, prompt_data: dict) -> tuple[list, list]:
         provider = require_provider(self.config["provider"])
         requested_count = prompt_data.get("n_cards")
+        target_count = self._target_count_for_prompt(prompt_data, requested_count)
         valid_cards = []
         warnings = []
         saw_raw_cards = False
         provider_calls = 0
         empty_attempts = 0
         no_progress_attempts = 0
-        max_provider_calls = self._max_provider_calls_for_prompt(prompt_data, requested_count)
+        max_provider_calls = self._max_provider_calls(target_count)
 
         while self._should_request_more(
             provider_calls,
             empty_attempts,
             no_progress_attempts,
             valid_cards,
-            requested_count,
+            target_count,
             max_provider_calls,
         ):
             attempt_prompt_data = self._build_attempt_prompt_data(
                 prompt_data,
                 requested_count,
+                target_count,
                 valid_cards,
                 provider_calls,
             )
@@ -77,7 +80,7 @@ class CardGenerationService:
                 f"Generated {len(valid_cards)} usable cards out of requested {requested_count} after {provider_calls} API calls"
             )
 
-        valid_cards, limit_warnings = self._limit_cards(valid_cards, requested_count)
+        valid_cards, limit_warnings = self._limit_cards(valid_cards, requested_count, prompt_data)
         warnings.extend(limit_warnings)
         self._attach_source_images(valid_cards, prompt_data.get("images", []))
 
@@ -88,25 +91,42 @@ class CardGenerationService:
         return valid_cards, warnings
 
     @classmethod
-    def _build_attempt_prompt_data(cls, prompt_data: dict, requested_count, valid_cards: list, attempt: int) -> dict:
-        if not cls._is_positive_int(requested_count):
+    def _build_attempt_prompt_data(
+        cls,
+        prompt_data: dict,
+        requested_count,
+        target_count,
+        valid_cards: list,
+        attempt: int,
+    ) -> dict:
+        if not cls._is_positive_int(target_count):
             return prompt_data
 
-        remaining_total = max(requested_count - len(valid_cards), 1)
+        remaining_total = max(target_count - len(valid_cards), 1)
         batch_count = min(remaining_total, cls._MAX_CARDS_PER_PROVIDER_CALL)
         retry_prompt_data = dict(prompt_data)
         retry_prompt_data["n_cards"] = batch_count
         if attempt > 0:
             retry_prompt_data["retry_instructions"] = cls._build_retry_instructions(
                 requested_count,
+                target_count,
                 remaining_total,
                 batch_count,
                 valid_cards,
+                exhaust_source=cls._should_exhaust_source(prompt_data),
             )
         return retry_prompt_data
 
     @staticmethod
-    def _build_retry_instructions(requested_count: int, remaining_total: int, batch_count: int, valid_cards: list) -> str:
+    def _build_retry_instructions(
+        requested_count: int,
+        target_count: int,
+        remaining_total: int,
+        batch_count: int,
+        valid_cards: list,
+        *,
+        exhaust_source: bool = False,
+    ) -> str:
         accepted = []
         for card in valid_cards:
             if card.get("card_type") == "cloze":
@@ -119,6 +139,18 @@ class CardGenerationService:
             if accepted_text
             else ""
         )
+        if exhaust_source:
+            return (
+                f"Continue extracting distinct cards from the same pasted source. "
+                f"The original visible request was {requested_count} card(s), but source mode should keep going "
+                f"in separate API calls until no supported, non-duplicate high-yield facts remain. "
+                f"There are {remaining_total} slot(s) left before the safety cap of {target_count}. "
+                f"Return exactly {batch_count} additional distinct, fully populated card(s) in this batch. "
+                "If no more supported non-duplicate facts remain in the provided source, call create_flashcards "
+                "with an empty cards array. Every card must satisfy the requested card type, cloze mode, tags, "
+                "deck, and grounding rules."
+                f"{duplicate_instruction}"
+            )
         return (
             f"The previous response produced fewer usable cards than requested. "
             f"The user requested {requested_count} total cards and {remaining_total} more usable card(s) are still needed. "
@@ -154,8 +186,19 @@ class CardGenerationService:
         return requested_count + cls._MAX_EMPTY_PROVIDER_ATTEMPTS - 1
 
     @classmethod
-    def _max_provider_calls_for_prompt(cls, prompt_data: dict, requested_count) -> int:
-        return cls._max_provider_calls(requested_count)
+    def _target_count_for_prompt(cls, prompt_data: dict, requested_count) -> int:
+        if cls._should_exhaust_source(prompt_data):
+            return cls._MAX_CARDS_PER_SOURCE_GENERATION
+        return requested_count
+
+    @staticmethod
+    def _should_exhaust_source(prompt_data: dict) -> bool:
+        requested_count = prompt_data.get("n_cards")
+        return (
+            prompt_data.get("mode") == "paste"
+            and isinstance(requested_count, int)
+            and requested_count >= CardGenerationService._MAX_CARDS_PER_PROVIDER_CALL
+        )
 
     @staticmethod
     def _max_unique_clozes(cloze_mode) -> Optional[int]:
@@ -244,7 +287,9 @@ class CardGenerationService:
                 card["images"] = images
 
     @staticmethod
-    def _limit_cards(cards: list, requested_count) -> tuple[list, list]:
+    def _limit_cards(cards: list, requested_count, prompt_data: Optional[dict] = None) -> tuple[list, list]:
+        if CardGenerationService._should_exhaust_source(prompt_data or {}):
+            return cards, []
         if not isinstance(requested_count, int) or requested_count < 1:
             return cards, []
         if len(cards) <= requested_count:
