@@ -2,7 +2,7 @@
 
 **provider**: Active model provider. Default: `anthropic`. The codebase is now structured so additional providers can be added without rewiring the UI or generation flow.
 
-**model**: Model identifier passed to the active provider. Default: `claude-sonnet-4-20250514`.
+**model**: Model identifier passed to the active provider. Default: `claude-sonnet-4-0`.
 
 **provider_api_keys**: Mapping of provider slug to API key. Example: `{"anthropic": "sk-ant-..."}`. Stored in plaintext on disk — do not share this file or the add-ons folder.
 

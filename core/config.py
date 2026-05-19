@@ -4,11 +4,12 @@ DEFAULT_DECK = "Medical::AI Generated"
 DEFAULT_PROVIDER = "anthropic"
 
 DEFAULT_MODEL_BY_PROVIDER = {
-    "anthropic": "claude-sonnet-4-20250514",
+    "anthropic": "claude-sonnet-4-0",
 }
 
 DEPRECATED_MODEL_REPLACEMENTS = {
     "claude-sonnet-4-6": DEFAULT_MODEL_BY_PROVIDER["anthropic"],
+    "claude-sonnet-4-20250514": DEFAULT_MODEL_BY_PROVIDER["anthropic"],
 }
 
 PROVIDER_LABELS = {
