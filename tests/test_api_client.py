@@ -9,6 +9,7 @@ import urllib.error
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core.api_client import ClaudeClient
+from core.providers.anthropic import AnthropicProvider
 
 CONFIG = {"max_tokens": 4096, "temperature": 0}
 MESSAGES = [{"role": "user", "content": "Generate cards on beta blockers."}]
@@ -101,6 +102,40 @@ class TestClaudeClient(unittest.TestCase):
         mock_urlopen.return_value = _make_response([])
         cards = self.client.generate_cards(MESSAGES, CONFIG)
         self.assertEqual(cards, [])
+
+    @patch("urllib.request.urlopen")
+    def test_prompt_generation_retries_empty_cards_response(self, mock_urlopen):
+        mock_urlopen.side_effect = [_make_response([]), _make_response(SAMPLE_CARDS)]
+        provider = AnthropicProvider("test-key")
+
+        cards = provider.generate_cards(
+            {
+                "mode": "topic",
+                "topic": "beta blockers",
+                "card_type": "mixed",
+                "cloze_mode": "multi",
+                "domain": None,
+                "deck": "Medical::AI Generated",
+                "n_cards": 10,
+                "domain_hints": True,
+            },
+            CONFIG,
+        )
+
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(mock_urlopen.call_count, 2)
+
+    def test_extract_cards_uses_later_non_empty_tool_call(self):
+        response = {
+            "content": [
+                {"type": "tool_use", "name": "create_flashcards", "input": {"cards": []}},
+                {"type": "tool_use", "name": "create_flashcards", "input": {"cards": SAMPLE_CARDS}},
+            ]
+        }
+
+        cards = self.client._extract_cards(response)
+
+        self.assertEqual(cards, SAMPLE_CARDS)
 
     @patch("urllib.request.urlopen")
     def test_multiple_cards_all_returned(self, mock_urlopen):

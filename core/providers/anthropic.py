@@ -84,7 +84,10 @@ class AnthropicProvider(ModelProvider):
 
     def generate_cards(self, prompt_data: dict, config: dict) -> list:
         messages = build_messages(prompt_data)
-        return self.generate_cards_from_messages(messages, config)
+        cards = self.generate_cards_from_messages(messages, config)
+        if cards:
+            return cards
+        return self.generate_cards_from_messages(_build_empty_retry_messages(messages), config)
 
     def generate_cards_from_messages(self, messages: list, config: dict) -> list:
         normalized = normalize_config(config)
@@ -124,13 +127,44 @@ class AnthropicProvider(ModelProvider):
         return self._extract_cards(data)
 
     def _extract_cards(self, response: dict) -> list:
+        empty_tool_result = False
         for block in response.get("content", []):
             if block.get("type") == "tool_use" and block.get("name") == "create_flashcards":
                 cards = block.get("input", {}).get("cards", [])
                 if not isinstance(cards, list):
                     raise RuntimeError("Unexpected cards format in tool_use response")
-                return cards
+                if cards:
+                    return cards
+                empty_tool_result = True
+        if empty_tool_result:
+            return []
         raise RuntimeError(
             "No create_flashcards tool_use block found in API response. "
             "The model may have refused to generate cards or returned an unexpected format."
         )
+
+
+def _build_empty_retry_messages(messages: list) -> list:
+    retry_text = (
+        "Your previous response used create_flashcards with an empty cards array. "
+        "Retry now and do not return an empty array. If the source is too vague, "
+        'return exactly one basic card with front="Input unclear" and a brief back '
+        "asking for a more specific medical topic or clearer source text. Otherwise, "
+        "generate the best supported high-yield card(s) from the original request."
+    )
+    retry_messages = list(messages)
+    if not retry_messages:
+        return [{"role": "user", "content": retry_text}]
+
+    last_message = dict(retry_messages[-1])
+    content = last_message.get("content", "")
+    if isinstance(content, str):
+        last_message["content"] = f"{content}\n\n{retry_text}"
+    elif isinstance(content, list):
+        last_message["content"] = list(content) + [{"type": "text", "text": retry_text}]
+    else:
+        retry_messages.append({"role": "user", "content": retry_text})
+        return retry_messages
+
+    retry_messages[-1] = last_message
+    return retry_messages
