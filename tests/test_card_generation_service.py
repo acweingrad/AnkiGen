@@ -221,8 +221,8 @@ def test_service_returns_partial_cards_when_retries_still_under_requested_count(
     )
 
     assert [card["front"] for card in cards] == ["Q1"]
-    assert "Generated 1 usable cards out of requested 3 after 3 API calls" in warnings
-    assert len(provider.calls) == 3
+    assert "Generated 1 usable cards out of requested 3 after 4 API calls" in warnings
+    assert len(provider.calls) == 4
 
 
 def test_service_batches_large_requested_count(monkeypatch):
@@ -270,7 +270,7 @@ def test_service_batches_large_requested_count(monkeypatch):
     assert "requested 70 total cards" in provider.calls[1]["retry_instructions"]
 
 
-def test_service_does_not_rebatch_pasted_source(monkeypatch):
+def test_service_rebatches_pasted_source_until_requested_count(monkeypatch):
     service = CardGenerationService(
         {
             "provider": "sequence",
@@ -305,10 +305,11 @@ def test_service_does_not_rebatch_pasted_source(monkeypatch):
         }
     )
 
-    assert [card["front"] for card in cards] == ["Q1"]
-    assert len(provider.calls) == 1
-    assert provider.calls[0]["n_cards"] == 10
-    assert "Generated 1 usable cards out of requested 20 after 1 API calls" in warnings
+    assert [card["front"] for card in cards] == ["Q1", "Q2"]
+    assert len(provider.calls) == 5
+    assert [call["n_cards"] for call in provider.calls] == [10, 10, 10, 10, 10]
+    assert "do not duplicate" in provider.calls[1]["retry_instructions"]
+    assert "Generated 2 usable cards out of requested 20 after 5 API calls" in warnings
 
 
 def test_service_does_not_count_duplicate_retry_cards(monkeypatch):
@@ -347,6 +348,64 @@ def test_service_does_not_count_duplicate_retry_cards(monkeypatch):
     )
 
     assert [card["front"] for card in cards] == ["Q1", "Q2"]
+    assert warnings == ["Duplicate generated card skipped"]
+
+
+def test_service_skips_duplicate_cloze_facts_with_different_markup(monkeypatch):
+    service = CardGenerationService(
+        {
+            "provider": "sequence",
+            "provider_api_keys": {},
+            "auto_add_disclaimer_card": False,
+        }
+    )
+    provider = _SequenceProvider(
+        [
+            [
+                {
+                    "card_type": "cloze",
+                    "text": "Metoprolol is a {{c1::beta-1 selective::receptor}} blocker.",
+                    "back_extra": "",
+                    "tags": [],
+                    "deck": "Medical::AI Generated",
+                },
+                {
+                    "card_type": "cloze",
+                    "text": "Metoprolol is a {{c2::beta-1 selective}} blocker.",
+                    "back_extra": "",
+                    "tags": [],
+                    "deck": "Medical::AI Generated",
+                },
+                {
+                    "card_type": "cloze",
+                    "text": "Atenolol is a {{c1::beta-1 selective}} blocker.",
+                    "back_extra": "",
+                    "tags": [],
+                    "deck": "Medical::AI Generated",
+                },
+            ],
+        ]
+    )
+    monkeypatch.setattr("core.services.card_generation.require_provider", lambda _name: provider)
+
+    cards, warnings = service.generate_cards(
+        {
+            "mode": "paste",
+            "text": "beta blocker notes",
+            "images": [],
+            "card_type": "cloze",
+            "cloze_mode": "multi",
+            "domain": None,
+            "deck": "Custom::Deck",
+            "n_cards": 2,
+            "domain_hints": True,
+        }
+    )
+
+    assert [card["text"] for card in cards] == [
+        "Metoprolol is a {{c1::beta-1 selective::receptor}} blocker.",
+        "Atenolol is a {{c1::beta-1 selective}} blocker.",
+    ]
     assert warnings == ["Duplicate generated card skipped"]
 
 

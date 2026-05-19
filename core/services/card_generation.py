@@ -1,3 +1,5 @@
+import re
+from difflib import SequenceMatcher
 from typing import Optional
 
 from ..card_parser import validate_and_clean_cards
@@ -149,13 +151,10 @@ class CardGenerationService:
     def _max_provider_calls(cls, requested_count) -> int:
         if not cls._is_positive_int(requested_count):
             return 1
-        full_batches = (requested_count + cls._MAX_CARDS_PER_PROVIDER_CALL - 1) // cls._MAX_CARDS_PER_PROVIDER_CALL
-        return full_batches + cls._MAX_EMPTY_PROVIDER_ATTEMPTS - 1
+        return requested_count + cls._MAX_EMPTY_PROVIDER_ATTEMPTS - 1
 
     @classmethod
     def _max_provider_calls_for_prompt(cls, prompt_data: dict, requested_count) -> int:
-        if prompt_data.get("mode") == "paste":
-            return 1
         return cls._max_provider_calls(requested_count)
 
     @staticmethod
@@ -177,15 +176,18 @@ class CardGenerationService:
     @classmethod
     def _append_distinct_cards(cls, existing_cards: list, new_cards: list) -> tuple[list, list]:
         existing_keys = {cls._card_identity(card) for card in existing_cards}
+        existing_fact_keys = {cls._card_fact_key(card) for card in existing_cards}
         distinct_cards = []
         warnings = []
 
         for card in new_cards:
             key = cls._card_identity(card)
-            if key in existing_keys:
+            fact_key = cls._card_fact_key(card)
+            if key in existing_keys or cls._is_duplicate_fact(fact_key, existing_fact_keys):
                 warnings.append("Duplicate generated card skipped")
                 continue
             existing_keys.add(key)
+            existing_fact_keys.add(fact_key)
             distinct_cards.append(card)
 
         return distinct_cards, warnings
@@ -199,6 +201,34 @@ class CardGenerationService:
             card_type,
             card.get("front", "").strip().lower(),
             card.get("back", "").strip().lower(),
+        )
+
+    @classmethod
+    def _card_fact_key(cls, card: dict) -> str:
+        if card.get("card_type") == "cloze":
+            text = card.get("text", "")
+        else:
+            text = f"{card.get('front', '')} {card.get('back', '')}"
+        return cls._normalize_fact_text(text)
+
+    @staticmethod
+    def _normalize_fact_text(text: str) -> str:
+        text = re.sub(r"\{\{c\d+::(.*?)(?:::[^{}]*)?\}\}", r"\1", text or "")
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"[^a-z0-9]+", " ", text.lower())
+        return re.sub(r"\s+", " ", text).strip()
+
+    @staticmethod
+    def _is_duplicate_fact(fact_key: str, existing_fact_keys: set[str]) -> bool:
+        if not fact_key:
+            return False
+        if fact_key in existing_fact_keys:
+            return True
+        return any(
+            len(fact_key) >= 40
+            and len(existing_key) >= 40
+            and SequenceMatcher(None, fact_key, existing_key).ratio() >= 0.96
+            for existing_key in existing_fact_keys
         )
 
     @staticmethod
