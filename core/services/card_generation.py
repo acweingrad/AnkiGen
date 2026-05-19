@@ -7,7 +7,8 @@ from ..providers.registry import require_provider
 
 
 class CardGenerationService:
-    _MAX_PROVIDER_ATTEMPTS = 3
+    _MAX_CARDS_PER_PROVIDER_CALL = 10
+    _MAX_EMPTY_PROVIDER_ATTEMPTS = 3
 
     def __init__(self, config: dict):
         self.config = normalize_config(config)
@@ -18,19 +19,25 @@ class CardGenerationService:
         valid_cards = []
         warnings = []
         saw_raw_cards = False
+        provider_calls = 0
+        empty_attempts = 0
+        no_progress_attempts = 0
 
-        for attempt in range(self._MAX_PROVIDER_ATTEMPTS):
+        while self._should_request_more(provider_calls, empty_attempts, no_progress_attempts, valid_cards, requested_count):
             attempt_prompt_data = self._build_attempt_prompt_data(
                 prompt_data,
                 requested_count,
                 valid_cards,
-                attempt,
+                provider_calls,
             )
+            provider_calls += 1
             raw_cards = provider.generate_cards(attempt_prompt_data, self.config)
             if not raw_cards:
-                warnings.append(f"Attempt {attempt + 1}: provider returned 0 cards")
+                empty_attempts += 1
+                warnings.append(f"Attempt {provider_calls}: provider returned 0 cards")
                 continue
 
+            empty_attempts = 0
             saw_raw_cards = True
             attempt_cards, attempt_warnings = validate_and_clean_cards(
                 raw_cards,
@@ -41,8 +48,10 @@ class CardGenerationService:
             valid_cards.extend(new_cards)
             warnings.extend(duplicate_warnings)
 
-            if not self._is_positive_int(requested_count) or self._has_requested_count(valid_cards, requested_count):
-                break
+            if new_cards:
+                no_progress_attempts = 0
+            else:
+                no_progress_attempts += 1
 
         if not valid_cards:
             if saw_raw_cards:
@@ -54,9 +63,8 @@ class CardGenerationService:
             )
 
         if self._is_positive_int(requested_count) and len(valid_cards) < requested_count:
-            reason = "; ".join(warnings) if warnings else "No retry details available."
-            raise RuntimeError(
-                f"The model returned {len(valid_cards)} usable cards, but {requested_count} were requested: {reason}"
+            warnings.append(
+                f"Generated {len(valid_cards)} usable cards out of requested {requested_count} after {provider_calls} API calls"
             )
 
         valid_cards, limit_warnings = self._limit_cards(valid_cards, requested_count)
@@ -71,21 +79,24 @@ class CardGenerationService:
 
     @classmethod
     def _build_attempt_prompt_data(cls, prompt_data: dict, requested_count, valid_cards: list, attempt: int) -> dict:
-        if attempt == 0 or not cls._is_positive_int(requested_count):
+        if not cls._is_positive_int(requested_count):
             return prompt_data
 
-        remaining = max(requested_count - len(valid_cards), 1)
+        remaining_total = max(requested_count - len(valid_cards), 1)
+        batch_count = min(remaining_total, cls._MAX_CARDS_PER_PROVIDER_CALL)
         retry_prompt_data = dict(prompt_data)
-        retry_prompt_data["n_cards"] = remaining
-        retry_prompt_data["retry_instructions"] = cls._build_retry_instructions(
-            requested_count,
-            remaining,
-            valid_cards,
-        )
+        retry_prompt_data["n_cards"] = batch_count
+        if attempt > 0:
+            retry_prompt_data["retry_instructions"] = cls._build_retry_instructions(
+                requested_count,
+                remaining_total,
+                batch_count,
+                valid_cards,
+            )
         return retry_prompt_data
 
     @staticmethod
-    def _build_retry_instructions(requested_count: int, remaining: int, valid_cards: list) -> str:
+    def _build_retry_instructions(requested_count: int, remaining_total: int, batch_count: int, valid_cards: list) -> str:
         accepted = []
         for card in valid_cards:
             if card.get("card_type") == "cloze":
@@ -100,11 +111,37 @@ class CardGenerationService:
         )
         return (
             f"The previous response produced fewer usable cards than requested. "
-            f"The user requested {requested_count} cards and {remaining} more usable card(s) are still needed. "
-            "Return only the remaining distinct, fully populated cards. "
+            f"The user requested {requested_count} total cards and {remaining_total} more usable card(s) are still needed. "
+            f"Return exactly {batch_count} remaining distinct, fully populated card(s) in this batch. "
             "Every card must satisfy the requested card type, cloze mode, tags, deck, and grounding rules."
             f"{duplicate_instruction}"
         )
+
+    @classmethod
+    def _should_request_more(
+        cls,
+        provider_calls: int,
+        empty_attempts: int,
+        no_progress_attempts: int,
+        valid_cards: list,
+        requested_count,
+    ) -> bool:
+        if empty_attempts >= cls._MAX_EMPTY_PROVIDER_ATTEMPTS:
+            return False
+        if no_progress_attempts >= cls._MAX_EMPTY_PROVIDER_ATTEMPTS:
+            return False
+        if not cls._is_positive_int(requested_count):
+            return provider_calls == 0
+        if cls._has_requested_count(valid_cards, requested_count):
+            return False
+        return provider_calls < cls._max_provider_calls(requested_count)
+
+    @classmethod
+    def _max_provider_calls(cls, requested_count) -> int:
+        if not cls._is_positive_int(requested_count):
+            return 1
+        full_batches = (requested_count + cls._MAX_CARDS_PER_PROVIDER_CALL - 1) // cls._MAX_CARDS_PER_PROVIDER_CALL
+        return full_batches + cls._MAX_EMPTY_PROVIDER_ATTEMPTS - 1
 
     @staticmethod
     def _max_unique_clozes(cloze_mode) -> Optional[int]:

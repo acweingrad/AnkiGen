@@ -2,7 +2,7 @@
 
 **provider**: Active model provider. Default: `anthropic`. The codebase is now structured so additional providers can be added without rewiring the UI or generation flow.
 
-**model**: Model identifier passed to the active provider. Default: `claude-sonnet-4-6`.
+**model**: Model identifier passed to the active provider. Default: `claude-sonnet-4-20250514`.
 
 **provider_api_keys**: Mapping of provider slug to API key. Example: `{"anthropic": "sk-ant-..."}`. Stored in plaintext on disk — do not share this file or the add-ons folder.
 
@@ -14,7 +14,7 @@
 
 **temperature**: API sampling temperature. `0` = deterministic, most accurate output. Do not raise above `0.3` for medical content — higher values increase the chance of hallucination.
 
-**max_tokens**: Maximum tokens in the API response. Default 4096 may be insufficient for 100 cards. Increase only if you see truncated output.
+**max_tokens**: Maximum tokens in each API response. Large requests are split into 10-card API calls to reduce truncation risk. Increase only if you see truncated output for individual batches.
 
 **auto_add_disclaimer_card**: If `true`, appends a reminder card to every generated batch instructing the user to verify content against authoritative sources.
 

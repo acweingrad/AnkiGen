@@ -187,7 +187,7 @@ def test_service_retries_empty_first_batch_then_returns_requested_count(monkeypa
     assert provider.calls[1]["n_cards"] == 2
 
 
-def test_service_raises_when_retries_still_under_requested_count(monkeypatch):
+def test_service_returns_partial_cards_when_retries_still_under_requested_count(monkeypatch):
     service = CardGenerationService(
         {
             "provider": "sequence",
@@ -206,23 +206,68 @@ def test_service_raises_when_retries_still_under_requested_count(monkeypatch):
     )
     monkeypatch.setattr("core.services.card_generation.require_provider", lambda _name: provider)
 
-    with pytest.raises(RuntimeError) as exc:
-        service.generate_cards(
-            {
-                "mode": "topic",
-                "topic": "beta blockers",
-                "images": [],
-                "card_type": "basic",
-                "cloze_mode": "multi",
-                "domain": None,
-                "deck": "Custom::Deck",
-                "n_cards": 3,
-                "domain_hints": True,
-            }
-        )
+    cards, warnings = service.generate_cards(
+        {
+            "mode": "topic",
+            "topic": "beta blockers",
+            "images": [],
+            "card_type": "basic",
+            "cloze_mode": "multi",
+            "domain": None,
+            "deck": "Custom::Deck",
+            "n_cards": 3,
+            "domain_hints": True,
+        }
+    )
 
-    assert "returned 1 usable cards, but 3 were requested" in str(exc.value)
+    assert [card["front"] for card in cards] == ["Q1"]
+    assert "Generated 1 usable cards out of requested 3 after 3 API calls" in warnings
     assert len(provider.calls) == 3
+
+
+def test_service_batches_large_requested_count(monkeypatch):
+    service = CardGenerationService(
+        {
+            "provider": "sequence",
+            "provider_api_keys": {},
+            "auto_add_disclaimer_card": False,
+        }
+    )
+    provider = _SequenceProvider(
+        [
+            [
+                {
+                    "card_type": "basic",
+                    "front": f"Q{batch}_{i}",
+                    "back": "A",
+                    "tags": [],
+                    "deck": "Medical::AI Generated",
+                }
+                for i in range(10)
+            ]
+            for batch in range(7)
+        ]
+    )
+    monkeypatch.setattr("core.services.card_generation.require_provider", lambda _name: provider)
+
+    cards, warnings = service.generate_cards(
+        {
+            "mode": "topic",
+            "topic": "beta blockers",
+            "images": [],
+            "card_type": "basic",
+            "cloze_mode": "multi",
+            "domain": None,
+            "deck": "Custom::Deck",
+            "n_cards": 70,
+            "domain_hints": True,
+        }
+    )
+
+    assert len(cards) == 70
+    assert warnings == []
+    assert [call["n_cards"] for call in provider.calls] == [10, 10, 10, 10, 10, 10, 10]
+    assert "requested 70 total cards" in provider.calls[1]["retry_instructions"]
 
 
 def test_service_does_not_count_duplicate_retry_cards(monkeypatch):

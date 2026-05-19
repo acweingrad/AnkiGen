@@ -4,7 +4,11 @@ DEFAULT_DECK = "Medical::AI Generated"
 DEFAULT_PROVIDER = "anthropic"
 
 DEFAULT_MODEL_BY_PROVIDER = {
-    "anthropic": "claude-sonnet-4-6",
+    "anthropic": "claude-sonnet-4-20250514",
+}
+
+DEPRECATED_MODEL_REPLACEMENTS = {
+    "claude-sonnet-4-6": DEFAULT_MODEL_BY_PROVIDER["anthropic"],
 }
 
 PROVIDER_LABELS = {
@@ -50,6 +54,8 @@ def normalize_config(config: Optional[dict]) -> dict:
         clean_keys["anthropic"] = legacy_api_key
 
     model = str(normalized.get("model") or "").strip()
+    if model in DEPRECATED_MODEL_REPLACEMENTS:
+        model = DEPRECATED_MODEL_REPLACEMENTS[model]
     if not model:
         model = DEFAULT_MODEL_BY_PROVIDER.get(provider, "")
 
