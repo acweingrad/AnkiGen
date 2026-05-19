@@ -74,7 +74,12 @@ def test_paste_mode_grounding_instruction_present():
 
 def test_paste_mode_mentions_requested_card_limit():
     messages = build_messages(_paste_data(n_cards=7))
-    assert "Generate up to 7 Anki flashcards" in messages[0]["content"]
+    assert "Generate exactly 7 Anki flashcards" in messages[0]["content"]
+
+
+def test_retry_instructions_are_appended_to_topic_prompt():
+    messages = build_messages(_topic_data(n_cards=2, retry_instructions="Return two new facts."))
+    assert "Retry instructions: Return two new facts." in messages[0]["content"]
 
 
 def test_paste_mode_filters_common_pdf_noise_but_keeps_scope_signals():
@@ -194,5 +199,5 @@ def test_system_prompt_contains_reference_deck_style_rules():
 
 def test_system_prompt_contains_lecture_pdf_rules():
     assert "LECTURE PDF / SLIDE PASTE RULES" in SYSTEM_PROMPT
-    assert "return fewer cards than the requested maximum" in SYSTEM_PROMPT
+    assert "Return fewer cards only when" in SYSTEM_PROMPT
     assert "not responsible for learning" in SYSTEM_PROMPT

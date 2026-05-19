@@ -30,7 +30,7 @@ LECTURE PDF / SLIDE PASTE RULES:
 - Prioritize: learning objectives, explicitly explained relationships, named clinical correlations, and "responsible for knowing" material.
 - Do not make cards from: disclosures, copyright/admin text, faculty contact info, textbook citations, URLs, slide numbers, figure attributions, isolated image labels, or repeated annotation clutter.
 - If the source explicitly says students are not responsible for learning something, do not make cards about that material.
-- If the source is dense, noisy, or repetitive, return fewer cards than the requested maximum rather than padding with weak cards.
+- If the source is dense, noisy, or repetitive, still try to satisfy the requested count using distinct high-yield facts from the source. Return fewer cards only when the source truly cannot support the requested count without inventing or padding weak facts.
 - For pasted lecture material, mimic AnKing-style notes: one concise cloze fact in the main text field, with optional image/context support in a short extra field.
 - Do not create broad summary cards, multi-step lecture recaps, or multi-fact list cards.
 
@@ -223,12 +223,14 @@ def _build_topic_message(data: dict) -> str:
         data.get("card_type", "mixed"),
         data.get("cloze_mode", "multi"),
     )
+    retry_instructions = _retry_instructions(data)
     return (
         f"{type_instruction}\n\n"
         + (f"{cloze_instruction}\n\n" if cloze_instruction else "")
-        + f"Generate {data['n_cards']} high-quality Anki flashcards on the medical topic: "
+        + f"Generate exactly {data['n_cards']} high-quality Anki flashcards on the medical topic: "
         + f'"{data["topic"]}".{hint}\n\n'
         + f"Target deck: {data['deck']}"
+        + retry_instructions
     )
 
 
@@ -241,6 +243,7 @@ def _build_paste_message(data: dict):
         text = text[:12000]
         truncated = "\n\n[Note: Input was truncated to 12,000 characters.]"
 
+    retry_instructions = _retry_instructions(data)
     type_instruction = _card_type_instruction(data.get("card_type", "mixed"))
     cloze_instruction = _cloze_mode_instruction(
         data.get("card_type", "mixed"),
@@ -252,27 +255,29 @@ def _build_paste_message(data: dict):
         return (
             f"{type_instruction}\n\n"
             + (f"{cloze_instruction}\n\n" if cloze_instruction else "")
-            + f"Generate up to {data['n_cards']} Anki flashcards from the following medical text. "
-            "Extract only the necessary high-yield facts. It is correct to return fewer cards if the source "
-            "does not support more strong cards. Ignore admin/citation/PDF extraction noise and do not invent "
-            "facts not present in the text.\n\n"
+            + f"Generate exactly {data['n_cards']} Anki flashcards from the following medical text when the source supports that many. "
+            "Extract only the necessary high-yield facts. Return fewer cards only if the source cannot support "
+            "the requested count without inventing or padding weak facts. Ignore admin/citation/PDF extraction "
+            "noise and do not invent facts not present in the text.\n\n"
             "Target the AnKingOverhaul cloze style:\n"
             "- Put one concise cloze fact in the main text.\n"
             "- Use back_extra only for a short pearl or image cue.\n"
             f"{cloze_guidance}"
             "- Do not create basic cards for this pasted material unless cloze is clearly impossible.\n\n"
             f"Target deck: {data['deck']}\n\n"
+            f"{retry_instructions}"
             f"--- BEGIN TEXT ---\n{text}\n--- END TEXT ---{truncated}"
         )
 
     text_block = (
         f"{type_instruction}\n\n"
         + (f"{cloze_instruction}\n\n" if cloze_instruction else "")
-        + f"Generate up to {data['n_cards']} Anki flashcards from the following medical slide image(s)"
+        + f"Generate exactly {data['n_cards']} Anki flashcards from the following medical slide image(s)"
         + (" and text" if text.strip() else "")
-        + ". Extract only the necessary high-yield facts. It is correct to return fewer cards if the source "
-          "does not support more strong cards. Ignore admin/citation/PDF extraction noise and do not invent "
-          "facts not present in the provided content.\n\n"
+        + " when the provided content supports that many. Extract only the necessary high-yield facts. "
+          "Return fewer cards only if the source cannot support the requested count without inventing or "
+          "padding weak facts. Ignore admin/citation/PDF extraction noise and do not invent facts not present "
+          "in the provided content.\n\n"
         "Target the AnKingOverhaul cloze style:\n"
         "- Put one concise cloze fact in the main text.\n"
         "- Use back_extra only for a short pearl or image cue.\n"
@@ -282,6 +287,7 @@ def _build_paste_message(data: dict):
         "For each card, set source_image_index to the 0-based index of the image the card's content "
         "primarily comes from. Omit source_image_index if the card is not clearly tied to one image.\n\n"
         f"Target deck: {data['deck']}"
+        + retry_instructions
         + (f"\n\n--- BEGIN TEXT ---\n{text}\n--- END TEXT ---{truncated}" if text.strip() else "")
     )
 
@@ -299,3 +305,10 @@ def _build_paste_message(data: dict):
         )
     content.append({"type": "text", "text": text_block})
     return content
+
+
+def _retry_instructions(data: dict) -> str:
+    retry_text = str(data.get("retry_instructions") or "").strip()
+    if not retry_text:
+        return ""
+    return f"\n\nRetry instructions: {retry_text}\n\n"

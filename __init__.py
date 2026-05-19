@@ -1,5 +1,10 @@
-from aqt import gui_hooks, mw
-from aqt.qt import QAction
+try:
+    from aqt import gui_hooks, mw
+    from aqt.qt import QAction
+except ImportError:
+    gui_hooks = None
+    mw = None
+    QAction = None
 
 from .core.config import has_provider_credentials, normalize_config
 
@@ -25,4 +30,5 @@ def _setup_menu():
     mw.form.menuTools.addAction(action)
 
 
-gui_hooks.main_window_did_init.append(_setup_menu)
+if gui_hooks is not None:
+    gui_hooks.main_window_did_init.append(_setup_menu)
