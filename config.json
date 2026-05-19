@@ -1,7 +1,7 @@
 {
     "api_key": "",
     "provider": "anthropic",
-    "model": "claude-sonnet-4-0",
+    "model": "claude-sonnet-4-6",
     "provider_api_keys": {
         "anthropic": ""
     },

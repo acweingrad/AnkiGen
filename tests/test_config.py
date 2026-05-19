@@ -23,14 +23,9 @@ def test_normalize_config_sets_default_model_for_provider():
     assert config["model"] == DEFAULT_MODEL_BY_PROVIDER["anthropic"]
 
 
-def test_normalize_config_replaces_deprecated_model():
+def test_normalize_config_preserves_model_value():
     config = normalize_config({"model": "claude-sonnet-4-6"})
-    assert config["model"] == DEFAULT_MODEL_BY_PROVIDER["anthropic"]
-
-
-def test_normalize_config_replaces_dated_sonnet_4_model():
-    config = normalize_config({"model": "claude-sonnet-4-20250514"})
-    assert config["model"] == DEFAULT_MODEL_BY_PROVIDER["anthropic"]
+    assert config["model"] == "claude-sonnet-4-6"
 
 
 def test_set_provider_api_key_updates_nested_mapping():
