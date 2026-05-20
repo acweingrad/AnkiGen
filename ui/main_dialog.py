@@ -101,6 +101,10 @@ class MedicalCardDialog(QDialog):
         self._generate_btn.setDefault(True)
         self._generate_btn.clicked.connect(self._on_generate_clicked)
         ctrl_row.addWidget(self._generate_btn)
+        self._review_btn = QPushButton("[ Review Cards ]")
+        self._review_btn.setEnabled(False)
+        self._review_btn.clicked.connect(self._show_review_page)
+        ctrl_row.addWidget(self._review_btn)
         settings_btn = QPushButton("[ Settings ]")
         settings_btn.clicked.connect(self._open_settings)
         ctrl_row.addWidget(settings_btn)
@@ -185,6 +189,7 @@ class MedicalCardDialog(QDialog):
         self._generate_btn.setEnabled(False)
         self._generate_btn.setText("[ Generating… ]")
         self._add_btn.setEnabled(False)
+        self._review_btn.setEnabled(False)
         self._input_status_label.setText(f"Generating cards via {self._provider_label()}…")
         self._review_status_label.setText("")
         self._clear_card_list()
@@ -238,6 +243,7 @@ class MedicalCardDialog(QDialog):
             w.setParent(None)
         self._card_widgets.clear()
         self._add_btn.setEnabled(False)
+        self._review_btn.setEnabled(False)
 
     def _populate_card_list(self, cards: list):
         self._clear_card_list()
@@ -246,6 +252,7 @@ class MedicalCardDialog(QDialog):
             self._card_layout.addWidget(widget)
             self._card_widgets.append(widget)
         self._add_btn.setEnabled(bool(cards))
+        self._review_btn.setEnabled(bool(cards))
 
     def _reject_all(self):
         for w in self._card_widgets:
