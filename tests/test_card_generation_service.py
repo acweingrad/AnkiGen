@@ -370,6 +370,106 @@ def test_service_continues_pasted_source_after_full_default_batch(monkeypatch):
     assert "Attempt 5: provider returned 0 cards" in warnings
 
 
+def test_service_splits_large_slide_sets_into_image_batches(monkeypatch):
+    service = CardGenerationService(
+        {
+            "provider": "sequence",
+            "provider_api_keys": {},
+            "auto_add_disclaimer_card": False,
+        }
+    )
+    provider = _SequenceProvider(
+        [
+            [
+                {
+                    "card_type": "basic",
+                    "front": "Slide 1 fact",
+                    "back": "A1",
+                    "tags": [],
+                    "deck": "Medical::AI Generated",
+                    "source_image_index": 0,
+                },
+            ],
+            [
+                {
+                    "card_type": "basic",
+                    "front": "Slide 5 fact",
+                    "back": "A5",
+                    "tags": [],
+                    "deck": "Medical::AI Generated",
+                    "source_image_index": 0,
+                },
+            ],
+        ]
+    )
+    monkeypatch.setattr("core.services.card_generation.require_provider", lambda _name: provider)
+
+    cards, warnings = service.generate_cards(
+        {
+            "mode": "paste",
+            "topic": "",
+            "text": "",
+            "images": [b"slide1", b"slide2", b"slide3", b"slide4", b"slide5"],
+            "card_type": "basic",
+            "cloze_mode": "multi",
+            "domain": None,
+            "deck": "Custom::Deck",
+            "n_cards": 10,
+            "domain_hints": True,
+        }
+    )
+
+    assert [len(call["images"]) for call in provider.calls[:2]] == [4, 1]
+    assert "slide batch 1 of 2" in provider.calls[0]["retry_instructions"]
+    assert "slide batch 2 of 2" in provider.calls[1]["retry_instructions"]
+    assert [card["front"] for card in cards] == ["Slide 1 fact", "Slide 5 fact"]
+    assert cards[0]["images"] == [b"slide1"]
+    assert cards[1]["images"] == [b"slide5"]
+    assert "Generated 2 usable cards out of requested 10 after 2 API calls" in warnings
+
+
+def test_service_batches_slides_without_repeating_accepted_facts(monkeypatch):
+    service = CardGenerationService(
+        {
+            "provider": "sequence",
+            "provider_api_keys": {},
+            "auto_add_disclaimer_card": False,
+        }
+    )
+    provider = _SequenceProvider(
+        [
+            [
+                {"card_type": "basic", "front": "Q1", "back": "A1", "tags": [], "deck": "Medical::AI Generated"},
+            ],
+            [
+                {"card_type": "basic", "front": "Q1", "back": "A1", "tags": [], "deck": "Medical::AI Generated"},
+                {"card_type": "basic", "front": "Q2", "back": "A2", "tags": [], "deck": "Medical::AI Generated"},
+            ],
+        ]
+    )
+    monkeypatch.setattr("core.services.card_generation.require_provider", lambda _name: provider)
+
+    cards, warnings = service.generate_cards(
+        {
+            "mode": "paste",
+            "topic": "",
+            "text": "",
+            "images": [b"1", b"2", b"3", b"4", b"5"],
+            "card_type": "basic",
+            "cloze_mode": "multi",
+            "domain": None,
+            "deck": "Custom::Deck",
+            "n_cards": 10,
+            "domain_hints": True,
+        }
+    )
+
+    assert [card["front"] for card in cards] == ["Q1", "Q2"]
+    assert "Already accepted cards; do not duplicate these facts" in provider.calls[1]["retry_instructions"]
+    assert "Q1 -> A1" in provider.calls[1]["retry_instructions"]
+    assert "Duplicate generated card skipped" in warnings
+
+
 def test_service_does_not_count_duplicate_retry_cards(monkeypatch):
     service = CardGenerationService(
         {
